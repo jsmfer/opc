@@ -17,11 +17,25 @@ import {
 import { useContentStore } from '@/hooks/useContentStore';
 import { useAuth } from '@/hooks/useAuth';
 import type { WebsiteContent } from '@/types/content';
+import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export function Admin() {
   const navigate = useNavigate();
   const { isLoading: authLoading, logout } = useAuth();
-  const { content, isLoaded: contentLoaded, saveContent, resetToDefault, exportData, importData } = useContentStore();
+  const { 
+    content, 
+    isLoaded: contentLoaded, 
+    isLoading: contentLoading,
+    error,
+    saveContent, 
+    resetToDefault, 
+    exportData, 
+    importData,
+    retry,
+    useLocalMode,
+  } = useContentStore();
   
   const [activeSection, setActiveSection] = useState('navigation');
   const [localContent, setLocalContent] = useState<WebsiteContent>(content);
@@ -42,12 +56,18 @@ export function Admin() {
     }
   }, [localContent, content, contentLoaded]);
 
-  const handleSave = useCallback(() => {
-    saveContent(localContent);
-    setHasChanges(false);
-    toast.success('保存成功', {
-      description: '所有更改已保存到本地存储',
-    });
+  const handleSave = useCallback(async () => {
+    try {
+      await saveContent(localContent);
+      setHasChanges(false);
+      toast.success('保存成功', {
+        description: '所有更改已保存到服务器',
+      });
+    } catch (err) {
+      toast.error('保存失败', {
+        description: err instanceof Error ? err.message : '请检查网络连接或稍后重试',
+      });
+    }
   }, [localContent, saveContent]);
 
   const handleExport = useCallback(() => {
@@ -57,11 +77,11 @@ export function Admin() {
     });
   }, [exportData]);
 
-  const handleImport = useCallback((file: File) => {
+  const handleImport = useCallback(async (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const text = e.target?.result as string;
-      if (importData(text)) {
+      if (await importData(text)) {
         setLocalContent({ ...content });
         setHasChanges(false);
         toast.success('导入成功', {
@@ -76,13 +96,17 @@ export function Admin() {
     reader.readAsText(file);
   }, [importData, content]);
 
-  const handleReset = useCallback(() => {
-    if (confirm('确定要重置所有内容为默认状态吗？此操作不可撤销。')) {
-      resetToDefault();
+  const handleReset = useCallback(async () => {
+    try {
+      await resetToDefault();
       setLocalContent(content);
       setHasChanges(false);
       toast.success('已重置', {
         description: '所有内容已恢复为默认状态',
+      });
+    } catch (err) {
+      toast.error('重置失败', {
+        description: err instanceof Error ? err.message : '请稍后重试',
       });
     }
   }, [resetToDefault, content]);
@@ -113,12 +137,51 @@ export function Admin() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasChanges]);
 
+  // 显示加载中
   if (authLoading || !contentLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-500">加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 显示错误状态
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="max-w-md w-full space-y-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>连接错误</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+          
+          <div className="flex gap-3">
+            <Button 
+              onClick={retry} 
+              className="flex-1"
+              variant="default"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              重试连接
+            </Button>
+            <Button 
+              onClick={useLocalMode} 
+              variant="outline"
+              className="flex-1"
+            >
+              <WifiOff className="w-4 h-4 mr-2" />
+              使用本地模式
+            </Button>
+          </div>
+          
+          <p className="text-sm text-gray-500 text-center">
+            本地模式下数据将存储在浏览器中，不会同步到服务器
+          </p>
         </div>
       </div>
     );
@@ -135,6 +198,7 @@ export function Admin() {
       onLogout={handleLogout}
       hasChanges={hasChanges}
       username="admin"
+      isSaving={contentLoading}
     >
       <div className="space-y-6">
         <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">

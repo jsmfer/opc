@@ -4,3 +4,7 @@ node_modules/
 /dist
 /build
 .env
+
+# 后端数据文件（可选，根据需求决定是否忽略）
+/server/data/
+/server/node_modules/

@@ -42,6 +42,7 @@ interface AdminLayoutProps {
   onLogout: () => void;
   hasChanges: boolean;
   username: string;
+  isSaving?: boolean;
 }
 
 const sections = [
@@ -68,6 +69,7 @@ export function AdminLayout({
   onLogout,
   hasChanges,
   username,
+  isSaving = false,
 }: AdminLayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -167,14 +169,24 @@ export function AdminLayout({
             <Button
               size="sm"
               onClick={onSave}
+              disabled={isSaving}
               className={`flex items-center gap-2 transition-all duration-300 ${
                 hasChanges 
                   ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/30' 
                   : 'bg-slate-400 hover:bg-slate-500 text-white'
-              }`}
+              } ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
-              <Save className="w-4 h-4" />
-              <span className="hidden sm:inline">{hasChanges ? '保存更改' : '已保存'}</span>
+              {isSaving ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span className="hidden sm:inline">保存中...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span className="hidden sm:inline">{hasChanges ? '保存更改' : '已保存'}</span>
+                </>
+              )}
             </Button>
 
             {/* User Menu */}

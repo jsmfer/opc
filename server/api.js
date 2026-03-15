@@ -1,8 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { WebsiteContent } from '@/types/content';
+/**
+ * OPC 网站内容管理 API 服务
+ * 提供 RESTful API 来持久化存储网站内容数据
+ */
+
+import express from 'express';
+import cors from 'cors';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+const DATA_FILE = path.join(__dirname, 'data', 'content.json');
+
+// 中间件
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
 
 // 默认网站内容数据
-const defaultContent: WebsiteContent = {
+const defaultContent = {
   navigation: {
     logoText: 'OPC',
     logoIcon: 'Cpu',
@@ -461,303 +480,127 @@ const defaultContent: WebsiteContent = {
   },
 };
 
-// 本地存储键名（降级方案）
-const STORAGE_KEY = 'opc_website_content';
-
-// API 基础 URL
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-// API 响应类型
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  message?: string;
+// 确保数据目录存在
+async function ensureDataDir() {
+  const dataDir = path.dirname(DATA_FILE);
+  try {
+    await fs.access(dataDir);
+  } catch {
+    await fs.mkdir(dataDir, { recursive: true });
+  }
 }
 
-// 后端 API 服务
-export const contentApi = {
-  // 获取所有内容
-  async getContent(): Promise<WebsiteContent> {
-    const response = await fetch(`${API_BASE_URL}/api/content`);
-    const result: ApiResponse<WebsiteContent> = await response.json();
-    
-    if (!result.success || !result.data) {
-      throw new Error(result.message || '获取内容失败');
-    }
-    
-    return result.data;
-  },
-
-  // 保存所有内容
-  async saveContent(content: WebsiteContent): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/content`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(content),
-    });
-    
-    const result: ApiResponse<void> = await response.json();
-    
-    if (!result.success) {
-      throw new Error(result.message || '保存内容失败');
-    }
-  },
-
-  // 更新特定区块
-  async updateSection<K extends keyof WebsiteContent>(
-    section: K,
-    data: WebsiteContent[K]
-  ): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/content/${section}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    
-    const result: ApiResponse<void> = await response.json();
-    
-    if (!result.success) {
-      throw new Error(result.message || '更新区块失败');
-    }
-  },
-
-  // 重置为默认内容
-  async resetToDefault(): Promise<WebsiteContent> {
-    const response = await fetch(`${API_BASE_URL}/api/content/reset`, {
-      method: 'POST',
-    });
-    
-    const result: ApiResponse<WebsiteContent> = await response.json();
-    
-    if (!result.success || !result.data) {
-      throw new Error(result.message || '重置内容失败');
-    }
-    
-    return result.data;
-  },
-
-  // 检查 API 健康状态
-  async healthCheck(): Promise<boolean> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/health`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(3000),
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// Hook 返回类型
-interface UseContentStoreReturn {
-  content: WebsiteContent;
-  isLoaded: boolean;
-  isLoading: boolean;
-  error: string | null;
-  saveContent: (newContent: WebsiteContent) => Promise<void>;
-  updateSection: <K extends keyof WebsiteContent>(section: K, data: WebsiteContent[K]) => Promise<void>;
-  resetToDefault: () => Promise<void>;
-  exportData: () => void;
-  importData: (jsonString: string) => Promise<boolean>;
-  retry: () => Promise<void>;
-  useLocalMode: () => void;
+// 读取内容
+async function readContent() {
+  try {
+    await ensureDataDir();
+    const data = await fs.readFile(DATA_FILE, 'utf-8');
+    return { ...defaultContent, ...JSON.parse(data) };
+  } catch (error) {
+    return defaultContent;
+  }
 }
 
-export function useContentStore(): UseContentStoreReturn {
-  const [content, setContent] = useState<WebsiteContent>(defaultContent);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [useLocalFallback, setUseLocalFallback] = useState(false);
-
-  // 从后端加载数据
-  const loadFromBackend = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const data = await contentApi.getContent();
-      setContent(data);
-      // 同时更新本地缓存
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (err) {
-      console.error('Failed to load from backend:', err);
-      setError('无法连接到后端服务器，请检查服务是否启动');
-      
-      // 尝试从本地缓存加载
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          setContent({ ...defaultContent, ...parsed });
-          setUseLocalFallback(true);
-        } catch (e) {
-          console.error('Failed to parse stored content:', e);
-        }
-      }
-    } finally {
-      setIsLoading(false);
-      setIsLoaded(true);
-    }
-  }, []);
-
-  // 初始加载
-  useEffect(() => {
-    loadFromBackend();
-  }, [loadFromBackend]);
-
-  // 保存到后端
-  const saveContent = useCallback(async (newContent: WebsiteContent) => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      if (useLocalFallback) {
-        // 本地模式：保存到 localStorage
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newContent));
-      } else {
-        // 后端模式：保存到服务器
-        await contentApi.saveContent(newContent);
-      }
-      setContent(newContent);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '保存失败';
-      setError(message);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [useLocalFallback]);
-
-  // 更新特定区块
-  const updateSection = useCallback(async <K extends keyof WebsiteContent>(
-    section: K,
-    data: WebsiteContent[K]
-  ) => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      if (useLocalFallback) {
-        // 本地模式
-        const newContent = { ...content, [section]: data };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newContent));
-        setContent(newContent);
-      } else {
-        // 后端模式
-        await contentApi.updateSection(section, data);
-        setContent(prev => ({ ...prev, [section]: data }));
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '更新失败';
-      setError(message);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [content, useLocalFallback]);
-
-  // 重置为默认值
-  const resetToDefault = useCallback(async () => {
-    if (!confirm('确定要重置所有内容为默认状态吗？此操作不可撤销。')) {
-      return;
-    }
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      if (useLocalFallback) {
-        // 本地模式
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultContent));
-        setContent(defaultContent);
-      } else {
-        // 后端模式
-        const data = await contentApi.resetToDefault();
-        setContent(data);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '重置失败';
-      setError(message);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [useLocalFallback]);
-
-  // 导出数据
-  const exportData = useCallback(() => {
-    const dataStr = JSON.stringify(content, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'opc-website-content.json';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [content]);
-
-  // 导入数据
-  const importData = useCallback(async (jsonString: string): Promise<boolean> => {
-    try {
-      const parsed = JSON.parse(jsonString);
-      const newContent = { ...defaultContent, ...parsed };
-      
-      if (useLocalFallback) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newContent));
-        setContent(newContent);
-      } else {
-        await contentApi.saveContent(newContent);
-        setContent(newContent);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newContent));
-      }
-      
-      return true;
-    } catch (e) {
-      console.error('Failed to import content:', e);
-      return false;
-    }
-  }, [useLocalFallback]);
-
-  // 重试加载
-  const retry = useCallback(async () => {
-    setUseLocalFallback(false);
-    await loadFromBackend();
-  }, [loadFromBackend]);
-
-  // 切换到本地模式
-  const useLocalMode = useCallback(() => {
-    setUseLocalFallback(true);
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        setContent({ ...defaultContent, ...parsed });
-      } catch (e) {
-        console.error('Failed to parse stored content:', e);
-      }
-    }
-  }, []);
-
-  return {
-    content,
-    isLoaded,
-    isLoading,
-    error,
-    saveContent,
-    updateSection,
-    resetToDefault,
-    exportData,
-    importData,
-    retry,
-    useLocalMode,
-  };
+// 写入内容
+async function writeContent(content) {
+  await ensureDataDir();
+  await fs.writeFile(DATA_FILE, JSON.stringify(content, null, 2), 'utf-8');
 }
 
-export { defaultContent };
-export type { WebsiteContent };
+// API 路由
+
+// 获取所有内容
+app.get('/api/content', async (req, res) => {
+  try {
+    const content = await readContent();
+    res.json({ success: true, data: content });
+  } catch (error) {
+    console.error('Error reading content:', error);
+    res.status(500).json({ success: false, message: '读取内容失败' });
+  }
+});
+
+// 获取特定区块内容
+app.get('/api/content/:section', async (req, res) => {
+  try {
+    const { section } = req.params;
+    const content = await readContent();
+    
+    if (section in content) {
+      res.json({ success: true, data: content[section] });
+    } else {
+      res.status(404).json({ success: false, message: '区块不存在' });
+    }
+  } catch (error) {
+    console.error('Error reading section:', error);
+    res.status(500).json({ success: false, message: '读取内容失败' });
+  }
+});
+
+// 更新所有内容
+app.post('/api/content', async (req, res) => {
+  try {
+    const newContent = req.body;
+    await writeContent(newContent);
+    res.json({ success: true, message: '内容已保存' });
+  } catch (error) {
+    console.error('Error writing content:', error);
+    res.status(500).json({ success: false, message: '保存内容失败' });
+  }
+});
+
+// 更新特定区块
+app.put('/api/content/:section', async (req, res) => {
+  try {
+    const { section } = req.params;
+    const sectionData = req.body;
+    const content = await readContent();
+    
+    if (section in content) {
+      const newContent = { ...content, [section]: sectionData };
+      await writeContent(newContent);
+      res.json({ success: true, message: '区块已更新' });
+    } else {
+      res.status(404).json({ success: false, message: '区块不存在' });
+    }
+  } catch (error) {
+    console.error('Error updating section:', error);
+    res.status(500).json({ success: false, message: '更新内容失败' });
+  }
+});
+
+// 重置为默认内容
+app.post('/api/content/reset', async (req, res) => {
+  try {
+    await writeContent(defaultContent);
+    res.json({ success: true, message: '内容已重置为默认值', data: defaultContent });
+  } catch (error) {
+    console.error('Error resetting content:', error);
+    res.status(500).json({ success: false, message: '重置内容失败' });
+  }
+});
+
+// 健康检查
+app.get('/api/health', (req, res) => {
+  res.json({ success: true, message: 'API 服务正常运行' });
+});
+
+// 启动服务器
+async function startServer() {
+  await ensureDataDir();
+  app.listen(PORT, () => {
+    console.log(`🚀 OPC 内容管理 API 服务已启动`);
+    console.log(`📍 地址: http://localhost:${PORT}`);
+    console.log(`📁 数据文件: ${DATA_FILE}`);
+    console.log('');
+    console.log('可用接口:');
+    console.log(`  GET    http://localhost:${PORT}/api/health`);
+    console.log(`  GET    http://localhost:${PORT}/api/content`);
+    console.log(`  GET    http://localhost:${PORT}/api/content/:section`);
+    console.log(`  POST   http://localhost:${PORT}/api/content`);
+    console.log(`  PUT    http://localhost:${PORT}/api/content/:section`);
+    console.log(`  POST   http://localhost:${PORT}/api/content/reset`);
+  });
+}
+
+startServer().catch(console.error);

@@ -1,4 +1,33 @@
-# React + TypeScript + Vite
+# OPC Web (React + TypeScript + Vite)
+
+A marketing website with an admin content editor built in React + TypeScript using Vite.
+
+## Quick Start
+
+```bash
+git clone https://github.com/Jsjack/opc.git
+cd opcweb
+npm install
+npm run dev
+```
+
+### Project commands
+
+- `npm run dev` - Start dev server
+- `npm run build` - Production build
+- `npm run preview` - Preview production build
+
+## Git setup status
+
+- Remote: `git@github.com:Jsjack/opc.git`
+- Branch: `main`
+- SSH auth configured and validated (`ssh -T git@github.com` returns success)
+
+## About
+
+This template uses React 18, TypeScript, Tailwind, shadcn/ui components, and Vite.
+
+---
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

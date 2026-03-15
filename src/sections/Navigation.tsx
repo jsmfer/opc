@@ -66,13 +66,13 @@ export function Navigation() {
 
             {/* CTA Button & Admin Link */}
             <div className="hidden md:flex items-center gap-3">
-              <Link
+              {/* <Link
                 to="/admin"
                 className="p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5"
                 title="进入后台管理"
               >
                 <Settings className="w-5 h-5" />
-              </Link>
+              </Link> */}
               <Button 
                 size="sm"
                 className="bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white"

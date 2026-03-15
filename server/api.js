@@ -1,20 +1,18 @@
 /**
  * OPC 网站内容管理 API 服务
- * 提供 RESTful API 来持久化存储网站内容数据
+ * 使用 MySQL 数据库持久化存储网站内容数据
  */
 
 import express from 'express';
 import cors from 'cors';
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+import { initDatabase, query, checkConnection } from './database.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// 加载环境变量（默认加载当前目录的.env文件）
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const DATA_FILE = path.join(__dirname, 'data', 'content.json');
 
 // 中间件
 app.use(cors());
@@ -480,31 +478,59 @@ const defaultContent = {
   },
 };
 
-// 确保数据目录存在
-async function ensureDataDir() {
-  const dataDir = path.dirname(DATA_FILE);
-  try {
-    await fs.access(dataDir);
-  } catch {
-    await fs.mkdir(dataDir, { recursive: true });
-  }
-}
-
-// 读取内容
+/**
+ * 从数据库读取所有内容
+ */
 async function readContent() {
   try {
-    await ensureDataDir();
-    const data = await fs.readFile(DATA_FILE, 'utf-8');
-    return { ...defaultContent, ...JSON.parse(data) };
+    const rows = await query('SELECT section_name, section_data FROM website_content');
+    const content = { ...defaultContent };
+    
+    rows.forEach(row => {
+      try {
+        content[row.section_name] = JSON.parse(row.section_data);
+      } catch (e) {
+        console.error(`解析 ${row.section_name} 数据失败:`, e);
+      }
+    });
+    
+    return content;
   } catch (error) {
+    console.error('从数据库读取内容失败:', error);
     return defaultContent;
   }
 }
 
-// 写入内容
+/**
+ * 保存所有内容到数据库
+ */
 async function writeContent(content) {
-  await ensureDataDir();
-  await fs.writeFile(DATA_FILE, JSON.stringify(content, null, 2), 'utf-8');
+  const sections = Object.keys(content);
+  
+  for (const section of sections) {
+    await query(
+      `INSERT INTO website_content (section_name, section_data) 
+       VALUES (?, ?) 
+       ON DUPLICATE KEY UPDATE section_data = VALUES(section_data)`,
+      [section, JSON.stringify(content[section])]
+    );
+  }
+}
+
+/**
+ * 初始化默认数据到数据库
+ */
+async function initDefaultData() {
+  try {
+    const count = await query('SELECT COUNT(*) as count FROM website_content');
+    if (count[0].count === 0) {
+      console.log('📝 初始化默认数据到数据库...');
+      await writeContent(defaultContent);
+      console.log('✅ 默认数据初始化完成');
+    }
+  } catch (error) {
+    console.error('初始化默认数据失败:', error);
+  }
 }
 
 // API 路由
@@ -554,15 +580,15 @@ app.put('/api/content/:section', async (req, res) => {
   try {
     const { section } = req.params;
     const sectionData = req.body;
-    const content = await readContent();
     
-    if (section in content) {
-      const newContent = { ...content, [section]: sectionData };
-      await writeContent(newContent);
-      res.json({ success: true, message: '区块已更新' });
-    } else {
-      res.status(404).json({ success: false, message: '区块不存在' });
-    }
+    await query(
+      `INSERT INTO website_content (section_name, section_data) 
+       VALUES (?, ?) 
+       ON DUPLICATE KEY UPDATE section_data = VALUES(section_data)`,
+      [section, JSON.stringify(sectionData)]
+    );
+    
+    res.json({ success: true, message: '区块已更新' });
   } catch (error) {
     console.error('Error updating section:', error);
     res.status(500).json({ success: false, message: '更新内容失败' });
@@ -581,26 +607,41 @@ app.post('/api/content/reset', async (req, res) => {
 });
 
 // 健康检查
-app.get('/api/health', (req, res) => {
-  res.json({ success: true, message: 'API 服务正常运行' });
+app.get('/api/health', async (req, res) => {
+  const dbConnected = await checkConnection();
+  res.json({ 
+    success: true, 
+    message: 'API 服务正常运行',
+    database: dbConnected ? '已连接' : '未连接'
+  });
 });
 
 // 启动服务器
 async function startServer() {
-  await ensureDataDir();
-  app.listen(PORT, () => {
-    console.log(`🚀 OPC 内容管理 API 服务已启动`);
-    console.log(`📍 地址: http://localhost:${PORT}`);
-    console.log(`📁 数据文件: ${DATA_FILE}`);
-    console.log('');
-    console.log('可用接口:');
-    console.log(`  GET    http://localhost:${PORT}/api/health`);
-    console.log(`  GET    http://localhost:${PORT}/api/content`);
-    console.log(`  GET    http://localhost:${PORT}/api/content/:section`);
-    console.log(`  POST   http://localhost:${PORT}/api/content`);
-    console.log(`  PUT    http://localhost:${PORT}/api/content/:section`);
-    console.log(`  POST   http://localhost:${PORT}/api/content/reset`);
-  });
+  try {
+    // 初始化数据库
+    await initDatabase();
+    
+    // 初始化默认数据
+    await initDefaultData();
+    
+    app.listen(PORT, () => {
+      console.log(`🚀 OPC 内容管理 API 服务已启动`);
+      console.log(`📍 地址: http://localhost:${PORT}`);
+      console.log(`🗄️  数据库: MySQL`);
+      console.log('');
+      console.log('可用接口:');
+      console.log(`  GET    http://localhost:${PORT}/api/health`);
+      console.log(`  GET    http://localhost:${PORT}/api/content`);
+      console.log(`  GET    http://localhost:${PORT}/api/content/:section`);
+      console.log(`  POST   http://localhost:${PORT}/api/content`);
+      console.log(`  PUT    http://localhost:${PORT}/api/content/:section`);
+      console.log(`  POST   http://localhost:${PORT}/api/content/reset`);
+    });
+  } catch (error) {
+    console.error('❌ 服务器启动失败:', error);
+    process.exit(1);
+  }
 }
 
-startServer().catch(console.error);
+startServer();

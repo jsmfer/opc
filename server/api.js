@@ -14,6 +14,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// 缓存控制中间件
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
 // 中间件
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -483,17 +491,31 @@ const defaultContent = {
  */
 async function readContent() {
   try {
+    console.log('📖 开始从数据库读取内容...');
     const rows = await query('SELECT section_name, section_data FROM website_content');
+    console.log('📦 数据库返回行数:', rows.length);
+    
     const content = { ...defaultContent };
     
     rows.forEach(row => {
       try {
-        content[row.section_name] = JSON.parse(row.section_data);
+        console.log('🔧 处理区块:', row.section_name);
+        console.log('🔍 数据类型:', typeof row.section_data);
+        
+        // 检查数据类型，如果已经是对象就直接使用，否则解析
+        if (typeof row.section_data === 'object') {
+          content[row.section_name] = row.section_data;
+          console.log('✅ 直接使用对象数据:', row.section_name);
+        } else {
+          content[row.section_name] = JSON.parse(row.section_data);
+          console.log('✅ 解析JSON字符串:', row.section_name);
+        }
       } catch (e) {
         console.error(`解析 ${row.section_name} 数据失败:`, e);
       }
     });
     
+    console.log('✅ 数据库内容读取完成');
     return content;
   } catch (error) {
     console.error('从数据库读取内容失败:', error);

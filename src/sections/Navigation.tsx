@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+// import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Menu, X, Settings } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { useContentStore } from '@/hooks/useContentStore';
 import { getIcon } from '@/lib/iconMap';
 
@@ -110,14 +110,14 @@ export function Navigation() {
                   {link.label}
                 </button>
               ))}
-              <Link
+              {/*<Link
                 to="/admin"
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="px-4 py-3 text-left text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/5 flex items-center gap-2"
               >
                 <Settings className="w-4 h-4" />
                 后台管理
-              </Link>
+              </Link>*/}
               <Button 
                 className="mt-4 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white"
               >

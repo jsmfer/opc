@@ -117,13 +117,13 @@ export function Login() {
             </div>
 
             {/* 提示信息 */}
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            {/* <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
               <p className="text-amber-900 text-sm font-medium mb-2">📝 默认账号</p>
               <div className="text-amber-800 text-sm space-y-1">
                 <p><span className="font-medium">用户名：</span>admin</p>
                 <p><span className="font-medium">密码：</span>admin123</p>
               </div>
-            </div>
+            </div> */}
 
             {/* 登录按钮 */}
             <Button

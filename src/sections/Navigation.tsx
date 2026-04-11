@@ -25,9 +25,16 @@ export function Navigation() {
   }, []);
 
   const scrollToSection = (href: string) => {
-    const element = document.querySelector(href);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+    // 检查是否是外部链接
+    if (href.startsWith('http://') || href.startsWith('https://')) {
+      // 外部链接，打开新窗口
+      window.open(href, '_blank', 'noopener noreferrer');
+    } else {
+      // 内部链接，使用querySelector
+      const element = document.querySelector(href);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+      }
     }
     setIsMobileMenuOpen(false);
   };
